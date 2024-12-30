@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -27,6 +28,7 @@ func InitK8sClient(kubeConfigPath string) (*kubernetes.Clientset, error) {
 }
 
 func ListIngress(clientset *kubernetes.Clientset) gin.HandlerFunc {
+	total := 0
 	return func(c *gin.Context) {
 		namespace := c.DefaultQuery("namespace", "")
 
@@ -56,12 +58,14 @@ func ListIngress(clientset *kubernetes.Clientset) gin.HandlerFunc {
 							"port":    path.Backend.Service.Port.Number,
 						}
 						ruleInfo["paths"] = append(ruleInfo["paths"].([]map[string]interface{}), pathInfo)
+						total += 1
 					}
 				}
 				ingressInfo["rules"] = append(ingressInfo["rules"].([]map[string]interface{}), ruleInfo)
 			}
 			response = append(response, ingressInfo)
 		}
+		fmt.Printf("Total ingress rules: %d\n", total)
 		c.JSON(http.StatusOK, response)
 	}
 }
