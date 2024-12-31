@@ -9,6 +9,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"log"
 	"net/http"
+	"strings"
 )
 
 func InitK8sClient(kubeConfigPath string) (*kubernetes.Clientset, error) {
@@ -31,6 +32,8 @@ func ListIngress(clientset *kubernetes.Clientset) gin.HandlerFunc {
 	total := 0
 	return func(c *gin.Context) {
 		namespace := c.DefaultQuery("namespace", "")
+		pathFilter := c.Query("path")
+		serviceFilter := c.Query("service")
 
 		ingresses, err := clientset.NetworkingV1().Ingresses(namespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
@@ -52,6 +55,12 @@ func ListIngress(clientset *kubernetes.Clientset) gin.HandlerFunc {
 				}
 				if rule.HTTP != nil {
 					for _, path := range rule.HTTP.Paths {
+						if pathFilter != "" && !strings.EqualFold(path.Path, pathFilter) {
+							continue
+						}
+						if serviceFilter != "" && !strings.EqualFold(path.Backend.Service.Name, serviceFilter) {
+							continue
+						}
 						pathInfo := map[string]interface{}{
 							"path":    path.Path,
 							"service": path.Backend.Service.Name,
@@ -63,7 +72,11 @@ func ListIngress(clientset *kubernetes.Clientset) gin.HandlerFunc {
 				}
 				ingressInfo["rules"] = append(ingressInfo["rules"].([]map[string]interface{}), ruleInfo)
 			}
-			response = append(response, ingressInfo)
+			rulesNotEmpty := len(ingressInfo["rules"].([]map[string]interface{})) > 0
+			pathsNotEmpty := len(ingressInfo["rules"].([]map[string]interface{})[0]["paths"].([]map[string]interface{})) > 0
+			if rulesNotEmpty && pathsNotEmpty {
+				response = append(response, ingressInfo)
+			}
 		}
 		fmt.Printf("Total ingress rules: %d\n", total)
 		c.JSON(http.StatusOK, response)
