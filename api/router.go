@@ -13,3 +13,11 @@ func SetupRouter(clientset *kubernetes.Clientset) *gin.Engine {
 	}
 	return r
 }
+
+func SetupRouterForEKS() {
+	r := gin.Default()
+	v1 := r.Group("api/v1")
+	{
+		v1.POST("eks/nodegroups")
+	}
+}

@@ -3,13 +3,19 @@ package api
 import (
 	"context"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
+	"log"
+	"net/http"
+	"strings"
+
+	"ingress-tool/model"
+
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/gin-gonic/gin"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"log"
-	"net/http"
-	"strings"
 )
 
 func InitK8sClient(kubeConfigPath string) (*kubernetes.Clientset, error) {
@@ -29,8 +35,8 @@ func InitK8sClient(kubeConfigPath string) (*kubernetes.Clientset, error) {
 }
 
 func ListIngress(clientset *kubernetes.Clientset) gin.HandlerFunc {
-	total := 0
 	return func(c *gin.Context) {
+		total := 0
 		namespace := c.DefaultQuery("namespace", "")
 		pathFilter := c.Query("path")
 		serviceFilter := c.Query("service")
@@ -81,4 +87,56 @@ func ListIngress(clientset *kubernetes.Clientset) gin.HandlerFunc {
 		fmt.Printf("Total ingress rules: %d\n", total)
 		c.JSON(http.StatusOK, response)
 	}
+}
+
+func ListNodeGroups() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req model.NodeGroupRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		nodegroups, err := getNodeGroups(req.ClusterName, req.Region)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"cluster_name": req.ClusterName,
+			"region":       req.Region,
+			"node_groups":  nodegroups,
+		})
+	}
+}
+
+func getNodeGroups(clusterName, region string) ([]map[string]interface{}, error) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	client := eks.NewFromConfig(cfg)
+	listNodeGroupsOutput, err := client.ListNodegroups(context.TODO(), &eks.ListNodegroupsInput{
+		ClusterName: aws.String(clusterName),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list nodegroups: %w", err)
+	}
+
+	var nodegroups []map[string]interface{}
+	for _, nodegroup := range listNodeGroupsOutput.Nodegroups {
+		describeNodeGroup, err := client.DescribeNodegroup(context.TODO(), &eks.DescribeNodegroupInput{
+			ClusterName:   aws.String(clusterName),
+			NodegroupName: aws.String(nodegroup),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe nodegroup [%s]: %w", nodegroup, err)
+		}
+		ngInfo := map[string]interface{}{
+			"name":          aws.ToString(describeNodeGroup.Nodegroup.NodegroupName),
+			"scalingConfig": describeNodeGroup.Nodegroup.ScalingConfig,
+		}
+		nodegroups = append(nodegroups, ngInfo)
+	}
+	return nodegroups, nil
 }
