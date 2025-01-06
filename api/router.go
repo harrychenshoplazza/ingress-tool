@@ -11,6 +11,7 @@ func SetupRouter(clientset *kubernetes.Clientset) *gin.Engine {
 	{
 		v1.GET("/ingresses", ListIngress(clientset))
 		v1.POST("/eks/nodegroups", ListNodeGroups())
+		v1.POST("/eks/multiacc-nodegroups", ListMultiAccNodeGroups())
 	}
 	return r
 }

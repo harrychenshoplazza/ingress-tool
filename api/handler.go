@@ -7,6 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eks"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"ingress-tool/model"
@@ -116,6 +117,14 @@ func getNodeGroups(clusterName, region string) ([]map[string]interface{}, error)
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 	client := eks.NewFromConfig(cfg)
+	nodegroups, err := getNodeGroupsAction(client, clusterName)
+	if err != nil {
+		return nil, err
+	}
+	return nodegroups, nil
+}
+
+func getNodeGroupsAction(client *eks.Client, clusterName string) ([]map[string]interface{}, error) {
 	listNodeGroupsOutput, err := client.ListNodegroups(context.TODO(), &eks.ListNodegroupsInput{
 		ClusterName: aws.String(clusterName),
 	})
@@ -137,6 +146,40 @@ func getNodeGroups(clusterName, region string) ([]map[string]interface{}, error)
 			"scalingConfig": describeNodeGroup.Nodegroup.ScalingConfig,
 		}
 		nodegroups = append(nodegroups, ngInfo)
+	}
+	return nodegroups, nil
+}
+
+func ListMultiAccNodeGroups() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req model.NodeGroupRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		profile := os.Getenv("HOME") + "/.aws/credentials"
+		nodegroups, err := getMultiAccsNodegroups(req.ClusterName, req.Region, profile)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"cluster_name": req.ClusterName,
+			"region":       req.Region,
+			"node_groups":  nodegroups,
+		})
+	}
+}
+
+func getMultiAccsNodegroups(clusterName, region, profile string) ([]map[string]interface{}, error) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithSharedConfigProfile(profile), config.WithRegion(region))
+	if err != nil {
+		return nil, fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	client := eks.NewFromConfig(cfg)
+	nodegroups, err := getNodeGroupsAction(client, clusterName)
+	if err != nil {
+		return nil, err
 	}
 	return nodegroups, nil
 }
