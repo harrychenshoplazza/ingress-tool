@@ -183,3 +183,76 @@ func getMultiAccsNodegroups(clusterName, region, profile string) ([]map[string]i
 	}
 	return nodegroups, nil
 }
+
+func LoginEKS() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req model.NodeGroupRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		err := loginToEKS(req.ClusterName, req.Region)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"cluster_name": req.ClusterName,
+			"region":       req.Region,
+		})
+	}
+}
+
+func loginToEKS(clusterName, region string) error {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(region))
+	if err != nil {
+		return fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	client := eks.NewFromConfig(cfg)
+	clusterOutput, err := client.DescribeCluster(context.TODO(), &eks.DescribeClusterInput{
+		Name: aws.String(clusterName),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to describe EKS cluster: %w", err)
+	}
+	cluster := clusterOutput.Cluster
+
+	kubeconfig := fmt.Sprintf(`
+apiVersion: v1
+clusters:
+- cluster:
+    server: %s
+    certificate-authority-data: %s
+  name: %s
+contexts:
+- context:
+    cluster: %s
+    user: eks-user
+  name: %s
+current-context: %s
+kind: Config
+preferences: {}
+users:
+- name: eks-user
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1
+      command: aws
+      args:
+        - eks
+        - get-token
+        - --cluster-name
+        - %s
+        - --region
+        - %s
+      env: null`, cluster.Endpoint, *cluster.CertificateAuthority.Data, clusterName, clusterName, clusterName, clusterName,
+		clusterName, region)
+
+	kubeconfigPath := fmt.Sprintf("%s/.kube/config", os.Getenv("HOME"))
+	if err := os.WriteFile(kubeconfigPath, []byte(kubeconfig), 0644); err != nil {
+		return fmt.Errorf("failed to write kubeconfig to file: %w", err)
+	}
+	fmt.Printf("Successfully updated kubeconfig for cluster: %s\n", clusterName)
+	return nil
+}
