@@ -14,7 +14,7 @@ func main() {
 	}
 	router := api.SetupRouter(clienset)
 	log.Println("Server running at http://localhost:8080")
-	if err := router.Run(":8080"); err != nil {
+	if err := router.Run(":8081"); err != nil {
 		log.Fatalf("Fail to run server: %v", err)
 	}
 }

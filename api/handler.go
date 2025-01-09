@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"ingress-tool/model"
 
@@ -254,5 +255,45 @@ users:
 		return fmt.Errorf("failed to write kubeconfig to file: %w", err)
 	}
 	fmt.Printf("Successfully updated kubeconfig for cluster: %s\n", clusterName)
+	return nil
+}
+
+func RestartDeployment(client *kubernetes.Clientset) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req model.RestartDeploymentReq
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		err := restartDeployment(client, req.Namespace, req.DeploymentName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"cluster_name": req.Namespace,
+			"region":       req.DeploymentName,
+		})
+	}
+}
+
+func restartDeployment(clientset *kubernetes.Clientset, namespace, deploymentName string) error {
+	deployment, err := clientset.AppsV1().Deployments(namespace).Get(context.TODO(), deploymentName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get deployment: %w", err)
+	}
+	annotations := deployment.Spec.Template.Annotations
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	// Set Restart time
+	annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().Format(time.RFC3339)
+	deployment.Spec.Template.Annotations = annotations
+
+	_, err = clientset.AppsV1().Deployments(namespace).Update(context.TODO(), deployment, metav1.UpdateOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to update deployment: %w", err)
+	}
 	return nil
 }
