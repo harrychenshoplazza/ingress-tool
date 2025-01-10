@@ -272,8 +272,8 @@ func RestartDeployment(client *kubernetes.Clientset) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"cluster_name": req.Namespace,
-			"region":       req.DeploymentName,
+			"namespace":      req.Namespace,
+			"deploymentName": req.DeploymentName,
 		})
 	}
 }
@@ -312,8 +312,8 @@ func RestartPod(client *kubernetes.Clientset) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"cluster_name": req.Namespace,
-			"region":       req.PodName,
+			"namespace": req.Namespace,
+			"podName":   req.PodName,
 		})
 	}
 }
