@@ -14,6 +14,7 @@ func SetupRouter(clientset *kubernetes.Clientset) *gin.Engine {
 		v1.POST("/eks/multiacc-nodegroups", ListMultiAccNodeGroups())
 		v1.POST("/eks/login", LoginEKS())
 		v1.POST("/restartDeployment", RestartDeployment(clientset))
+		v1.POST("/restartPod", RestartPod(clientset))
 	}
 	return r
 }

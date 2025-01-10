@@ -297,3 +297,43 @@ func restartDeployment(clientset *kubernetes.Clientset, namespace, deploymentNam
 	}
 	return nil
 }
+
+func RestartPod(client *kubernetes.Clientset) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req model.RestartPodReq
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		err := restartPod(client, req.Namespace, req.PodName)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"cluster_name": req.Namespace,
+			"region":       req.PodName,
+		})
+	}
+}
+
+func restartPod(client *kubernetes.Clientset, namespace, podName string) error {
+	pod, err := client.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get pod <%s>: %w", podName, err)
+	}
+	// Check if the pod is managed by any controllers
+	controller := metav1.GetControllerOf(pod)
+	if controller != nil {
+		fmt.Printf("Pod <%s> is managed by %s/%s", podName, controller.Kind, controller.Name)
+	} else {
+		fmt.Printf("Warning: Pod <%s> is not managed by any controllers, restarting it may not be done\n", podName)
+	}
+	err = client.CoreV1().Pods(namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to delete pod <%s>: %w", podName, err)
+	}
+	fmt.Printf("Pod <%s> has been successfully deleted, kubernetes will restart it\n", podName)
+	return nil
+}
